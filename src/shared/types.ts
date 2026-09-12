@@ -87,11 +87,50 @@ export type StorageIndexState = {
   hashes: Record<string, IndexedFile[]>
 }
 
+export type ReasoningAssessment = {
+  fingerprint: string
+  verdict: 'protect' | 'neutral'
+  confidence: number
+  reason: string
+}
+
+export type ReasoningCandidateRecord = {
+  fingerprint: string
+  path: string
+  sizeBytes: number
+  modifiedAt: number
+  category: 'duplicate' | 'cache' | 'temp'
+  reason: string
+  duplicateOf?: string
+  hash?: string
+  importance: number
+}
+
+export type ReasoningStoreState = {
+  status: 'unconfigured' | 'idle' | 'running' | 'ready' | 'error'
+  model: string
+  lastRunAt: string | null
+  nextAttemptAt: string | null
+  failureCount: number
+  summary: string
+  observations: string[]
+  error: string | null
+  pending: ReasoningCandidateRecord[]
+  assessments: ReasoningAssessment[]
+}
+
+export type ReasoningPublicState = Omit<ReasoningStoreState, 'pending'> & {
+  keyConfigured: boolean
+  pendingCount: number
+  protectedCount: number
+}
+
 export type LifeguardState = {
   profile: Profile
   actions: ActionLogEntry[]
   quarantine: QuarantineEntry[]
   snapshot: SystemSnapshot | null
   storage: StorageIndexState
+  reasoning: ReasoningPublicState
   watching: boolean
 }

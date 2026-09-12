@@ -10,6 +10,14 @@ Coverage begins at every fixed-volume root, while mutation has a much narrower g
 
 The first real-device session is a 24-hour learning period. The app continuously indexes during that time but does not move files or close apps. The demo bypass is path-scoped to Lifeguard's synthetic app-data directory.
 
+## Bounded reasoning model
+
+The optional OpenAI reasoning layer uses `gpt-5.6-luna` with low reasoning effort because this is a periodic, cost-sensitive classification workload. It receives only anonymous fingerprints and coarse features such as category, extension, size, age, location class, deterministic score, volume count, and restore count. It never receives a raw path, filename, application name, or file content, and API responses are created with `store: false`.
+
+The response schema permits only `protect` and `neutral`. A `protect` assessment vetoes the candidate. `neutral` returns the candidate to the deterministic safety engine, which independently rechecks the path, canonical duplicate, learning window, and quarantine state. The model has no filesystem or process tools and cannot lower the deterministic importance score or authorize an action.
+
+When no key is configured, Lifeguard operates with the deterministic policy alone. If a configured reasoning request fails or is incomplete, its pending candidates remain untouched.
+
 ## Recovery before deletion
 
 The MVP never permanently deletes user data. High-confidence waste moves to an app-owned quarantine with its original path, SHA-256 hash, reason, timestamp, size, and restore control. This makes autonomous action demonstrable without making a bad decision irreversible.
@@ -24,4 +32,4 @@ Lifeguard closes rather than kills. Only known restartable apps with a window, o
 
 ## Desktop only
 
-The MVP targets Windows and macOS. There is no phone or iOS companion because the product depends on desktop filesystem, process, foreground-window, and volume context. Windows is packaged and tested in this repository; the macOS observer and volume adapter are implemented but packaging and permissions must be verified on a Mac.
+The MVP targets Windows and macOS. There is no phone or iOS companion because the product depends on desktop filesystem, process, foreground-window, and volume context. Windows is packaged and tested in this repository. The macOS observer, fixed-volume adapter, packaging targets, and native verification harness are implemented; the physical-Mac checklist in `docs/MAC_TESTING.md` must pass before the team claims macOS validation.

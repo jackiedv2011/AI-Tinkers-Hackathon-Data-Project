@@ -37,6 +37,11 @@ let previewState: LifeguardState = {
     queue: ['C:\\Users'], processedFiles: 18243, processedBytes: 126 * 1024 ** 3, excludedPaths: 94, errors: 2,
     cycle: 1, status: 'indexing', cycleStartedAt: new Date().toISOString(), lastCompletedAt: null, lastTickAt: new Date().toISOString(), representatives: {}, hashes: {}
   },
+  reasoning: {
+    status: 'ready', model: 'gpt-5.6-luna', keyConfigured: true, lastRunAt: new Date().toISOString(), nextAttemptAt: null, failureCount: 0,
+    summary: 'Recent working files remain protected; only deterministic disposable candidates are eligible.',
+    observations: ['Reasoning can only add protection.'], error: null, assessments: [], pendingCount: 0, protectedCount: 2
+  },
   watching: true
 }
 
@@ -131,10 +136,10 @@ function App(): React.JSX.Element {
         </article>
 
         <article className="card intelligence-card">
-          <div className="card-title"><BrainCircuit size={19} /> <span>Personal context</span><span className="count">{isLearning ? 'LEARNING' : 'ARMED'}</span></div>
-          <p className="primary">{isLearning ? 'Learning your working set' : 'Protection model active'}</p>
-          <p className="secondary">Recent work, personal folders, source code, foreground apps, projects, and restores raise importance. Old caches and exact redundant copies lower it.</p>
-          <div className="memory-rule"><ShieldCheck size={15} /> System, sync, and protected zones are hard exclusions</div>
+          <div className="card-title"><BrainCircuit size={19} /> <span>Context reasoner</span><span className="count">{state.reasoning.keyConfigured ? state.reasoning.status.toUpperCase() : 'LOCAL'}</span></div>
+          <p className="primary">{state.reasoning.keyConfigured ? state.reasoning.model : isLearning ? 'Learning your working set' : 'Deterministic guardrails active'}</p>
+          <p className="secondary">{state.reasoning.keyConfigured ? state.reasoning.summary : 'Add OPENAI_API_KEY locally to enable anonymized context synthesis. Cleanup remains functional without it.'}</p>
+          <div className="memory-rule"><ShieldCheck size={15} /> The model can only add protection—never authorize deletion</div>
         </article>
 
         <article className="card demo-card">

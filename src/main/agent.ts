@@ -8,6 +8,7 @@ import { observeSystem, requestGracefulClose } from './observer'
 import { isInside } from './path-policy'
 import { queuePriorityPath, restartStorageCycle, scanStorageTick, type CleanupCandidate } from './storage-indexer'
 import { getDemoFolders, isDemoPath } from './demo-paths'
+import { getReasoningPublicState, maybeRunReasoning, queueReasoningCandidate, takeReasoningApprovedCandidates } from './reasoning'
 import type { ActionLogEntry, LifeguardState, ProcessInfo, QuarantineEntry, SystemSnapshot } from '../shared/types'
 
 const observedSince = new Map<number, number>()
@@ -153,7 +154,7 @@ async function pauseDemoWorker(): Promise<boolean> {
 
 async function runProcessPolicy(current: SystemSnapshot): Promise<boolean> {
   const profile = getProfile()
-  if (current.platform === 'darwin' && !current.foregroundPid) return false
+  if (current.platform === 'darwin' && !current.foregroundPid && !demoWorkerPid) return false
   const underPressure = current.availableMemoryMb < profile.memoryThresholdMb
   if (!underPressure && !demoWorkerPid) return false
   const candidates = current.processes
@@ -181,8 +182,15 @@ async function executePolicyCycle(): Promise<SystemSnapshot> {
   const now = Date.now()
   for (const process of snapshot.processes) if (!observedSince.has(process.pid)) observedSince.set(process.pid, now)
   if (snapshot.foregroundPid) observedActivity.set(snapshot.foregroundPid, now)
+  await maybeRunReasoning(snapshot)
+  for (const approved of takeReasoningApprovedCandidates()) await quarantineCandidate(approved)
   await runProcessPolicy(snapshot)
-  await scanStorageTick(getProfile(), quarantineCandidate)
+  await scanStorageTick(getProfile(), async (candidate) => {
+    if (!getProfile().demoMode && queueReasoningCandidate(candidate)) return false
+    return quarantineCandidate(candidate)
+  })
+  await maybeRunReasoning(snapshot)
+  for (const approved of takeReasoningApprovedCandidates()) await quarantineCandidate(approved)
   if (getProfile().demoMode) saveProfile({ demoMode: false })
   return snapshot
 }
@@ -233,6 +241,7 @@ export function getState(): LifeguardState {
     quarantine: getQuarantine(),
     snapshot,
     storage: getStorageIndex(),
+    reasoning: getReasoningPublicState(),
     watching: true
   }
 }

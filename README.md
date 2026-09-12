@@ -10,6 +10,7 @@ There is no folder-selection workflow and no recommendation inbox. The environme
 - Persists a budgeted depth-first index queue so scanning continues in small background slices across launches.
 - Detects exact duplicates with size grouping plus SHA-256 verification across scanned user space.
 - Scores importance from recency, personal-folder location, source-code type, protected zones, and known disposable locations.
+- Optionally sends anonymized candidate features to `gpt-5.6-luna` for structured context reasoning. Raw paths, filenames, application names, and file contents stay local.
 - Quarantines only low-importance exact duplicates and old files in known cache/temp locations.
 - Never permanently deletes user data; every moved file has an integrity hash, explanation, original path, and restore action.
 - Watches foreground context and RAM. Under pressure it can gracefully close only a small allowlist of restartable apps after observing them idle for 45 minutes.
@@ -23,7 +24,16 @@ Cloud-only offload is intentionally not faked: the MVP will not dehydrate a loca
 
 ```bash
 pnpm install
+cp .env.example .env.local
 pnpm dev
+```
+
+The OpenAI integration is optional. Add `OPENAI_API_KEY` only to the ignored `.env.local` file. Without it, the deterministic cleanup engine remains fully functional. With it, the reasoning model can conservatively veto ambiguous candidates; it cannot authorize deletion or bypass a local safety rule.
+
+After adding a key, verify the connection with:
+
+```bash
+pnpm reasoning:check
 ```
 
 Use **Stage safe live demo** to create two synthetic 4 MB installer files, a stale 3 MB temporary file, and an isolated memory worker inside Lifeguard-owned fixture directories. One click stages the conditions; the normal background policy discovers the duplicate and stale temporary file, moves them into recoverable quarantine, and closes the worker without another prompt.
@@ -44,11 +54,11 @@ On Windows, the complete native verification suite can be rerun with:
 
 It validates unit policy boundaries, compilation, packaging, fixed-drive discovery, duplicate cleanup, stale-temp cleanup, graceful memory reclamation, SHA-256 integrity, quarantine, restoration, and fixture-only mutation before restarting Lifeguard.
 
-The unpacked Windows application is written to `dist/win-unpacked/Lifeguard.exe`. A macOS package must be produced and verified on macOS because Electron Builder does not cross-sign a Mac application from Windows.
+The unpacked Windows application is written to `dist/win-unpacked/Lifeguard.exe`. For the physical-Mac handoff, follow [docs/MAC_TESTING.md](docs/MAC_TESTING.md) and run `bash scripts/verify-mac.sh`.
 
 ## Architecture and safety
 
-Electron's main process owns all operating-system access. `observer.ts` reads memory, foreground process, process inventory, and fixed volumes. `storage-indexer.ts` advances a persistent bounded scan. `path-policy.ts` provides deterministic exclusions and importance scoring. `agent.ts` is the sole action authority and writes the recovery ledger. The React renderer receives a narrow IPC bridge and has no direct filesystem access.
+Electron's main process owns all operating-system access. `observer.ts` reads memory, foreground process, process inventory, and fixed volumes. `storage-indexer.ts` advances a persistent bounded scan. `path-policy.ts` provides deterministic exclusions and importance scoring. `reasoning.ts` sends redacted feature digests and accepts only `protect` or `neutral` structured assessments. `agent.ts` is the sole action authority and writes the recovery ledger. The React renderer receives a narrow IPC bridge and has no direct filesystem access.
 
 The index intentionally skips reparse points, system/install areas, application data outside recognized disposable caches, `.git`, `node_modules`, protected projects, and Lifeguard's own quarantine. Permission errors fail closed and scanning continues.
 

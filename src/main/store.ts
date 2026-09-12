@@ -1,13 +1,14 @@
 import Store from 'electron-store'
 import { app } from 'electron'
 import { join } from 'node:path'
-import type { ActionLogEntry, Profile, QuarantineEntry, StorageIndexState } from '../shared/types'
+import type { ActionLogEntry, Profile, QuarantineEntry, ReasoningStoreState, StorageIndexState } from '../shared/types'
 
 type PersistedState = {
   profile: Profile
   actions: ActionLogEntry[]
   quarantine: QuarantineEntry[]
   storageIndex: StorageIndexState
+  reasoning: ReasoningStoreState
 }
 
 type StateStore = {
@@ -50,6 +51,19 @@ const defaultStorageIndex = (): StorageIndexState => ({
   hashes: {}
 })
 
+const defaultReasoning = (): ReasoningStoreState => ({
+  status: 'unconfigured',
+  model: 'gpt-5.6-luna',
+  lastRunAt: null,
+  nextAttemptAt: null,
+  failureCount: 0,
+  summary: 'Local deterministic protection is active.',
+  observations: [],
+  error: null,
+  pending: [],
+  assessments: []
+})
+
 const initialProfile = defaultProfile()
 
 export const stateStore = new ElectronStore<PersistedState>({
@@ -58,7 +72,8 @@ export const stateStore = new ElectronStore<PersistedState>({
     profile: initialProfile,
     actions: [],
     quarantine: [],
-    storageIndex: defaultStorageIndex()
+    storageIndex: defaultStorageIndex(),
+    reasoning: defaultReasoning()
   }
 }) as unknown as StateStore
 
@@ -99,4 +114,12 @@ export function getStorageIndex(): StorageIndexState {
 
 export function saveStorageIndex(index: StorageIndexState): void {
   stateStore.set('storageIndex', index)
+}
+
+export function getReasoningState(): ReasoningStoreState {
+  return { ...defaultReasoning(), ...(stateStore.get('reasoning') ?? {}) }
+}
+
+export function saveReasoningState(reasoning: ReasoningStoreState): void {
+  stateStore.set('reasoning', reasoning)
 }
