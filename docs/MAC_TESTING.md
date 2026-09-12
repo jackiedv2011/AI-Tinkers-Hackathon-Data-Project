@@ -12,6 +12,8 @@ cp .env.example .env.local
 
 Open `.env.local` locally and set `OPENAI_API_KEY`. Never commit that file. The default `gpt-5.6-luna` model can be changed with `LIFEGUARD_REASONING_MODEL`.
 
+The verification script reads the project `.env.local`. A normally installed app can instead read `.env.local` from its macOS user-data directory (`~/Library/Application Support/Lifeguard/`) so the key never has to be bundled into the application or repository.
+
 ## Test the reasoning connection
 
 ```bash

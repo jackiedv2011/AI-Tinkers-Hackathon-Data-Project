@@ -1,6 +1,6 @@
 # Lifeguard
 
-Lifeguard is an always-running desktop agent that quietly keeps a Windows or macOS computer healthy. It automatically discovers every fixed drive, incrementally learns the machine's working set, reclaims high-confidence waste through recoverable quarantine, and gracefully closes restartable idle apps only under real memory pressure.
+Lifeguard is an always-running desktop agent that quietly keeps a Windows or macOS computer healthy. It automatically discovers every fixed drive, incrementally learns the machine's working set, isolates high-confidence waste in recoverable quarantine, and gracefully closes restartable idle apps only under real memory pressure.
 
 There is no folder-selection workflow and no recommendation inbox. The environment is the product: Lifeguard uses drive layout, file age and location, foreground-app context, memory pressure, protected projects, and recovery history to decide when silence is safer than action.
 
@@ -19,6 +19,8 @@ There is no folder-selection workflow and no recommendation inbox. The environme
 - Runs in the system tray and at login. No iOS or mobile client is claimed.
 
 Cloud-only offload is intentionally not faked: the MVP will not dehydrate a local file until a future provider adapter can prove the remote copy is fully synced.
+
+Quarantine is a safety and recovery mechanism, not a claim that bytes were freed on the same volume. Real capacity reclamation requires an explicit retention/deletion policy, compression, or verified cloud dehydration; none is silently simulated in this build.
 
 ## Run locally
 
@@ -55,6 +57,8 @@ On Windows, the complete native verification suite can be rerun with:
 It validates unit policy boundaries, compilation, packaging, fixed-drive discovery, duplicate cleanup, stale-temp cleanup, graceful memory reclamation, SHA-256 integrity, quarantine, restoration, and fixture-only mutation before restarting Lifeguard.
 
 The unpacked Windows application is written to `dist/win-unpacked/Lifeguard.exe`. For the physical-Mac handoff, follow [docs/MAC_TESTING.md](docs/MAC_TESTING.md) and run `bash scripts/verify-mac.sh`.
+
+The complete non-UI readiness record and remaining external gates are in [docs/BACKEND_AUDIT.md](docs/BACKEND_AUDIT.md).
 
 ## Architecture and safety
 

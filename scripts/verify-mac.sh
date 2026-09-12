@@ -25,5 +25,8 @@ fi
 if [[ -f "$UPPER_STATE" ]]; then STATE_PATH="$UPPER_STATE"; else STATE_PATH="$LOWER_STATE"; fi
 node scripts/native-state-check.mjs verify "$STATE_PATH" "$BASELINE"
 
-echo 'macOS native verification passed. Starting the packaged app with the current project environment.'
-"$APP_BIN" >/dev/null 2>&1 &
+echo 'macOS native verification passed.'
+if [[ -z "${CI:-}" ]]; then
+  echo 'Starting the packaged app with the current project environment.'
+  "$APP_BIN" >/dev/null 2>&1 &
+fi

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { ReasoningOutputSchema, toCandidateFeature } from './reasoning-client'
+import { candidateFingerprint, ReasoningOutputSchema, toCandidateFeature } from './reasoning-client'
 import type { ReasoningCandidateRecord } from '../shared/types'
 
 test('reasoning features never contain a raw path or filename', () => {
@@ -34,4 +34,15 @@ test('reasoning output can protect or remain neutral but cannot authorize cleanu
     assessments: [{ fingerprint: 'anonymous-123', verdict: 'quarantine', confidence: 1, reason: 'Delete it.' }]
   })
   assert.equal(invalid.success, false)
+})
+
+test('a changed file cannot reuse an earlier model assessment for the same path', () => {
+  const base = {
+    path: 'C:\\Users\\alex\\Downloads\\archive.zip',
+    sizeBytes: 8 * 1024 * 1024,
+    modifiedAt: 1_700_000_000_000,
+    category: 'duplicate' as const
+  }
+  assert.notEqual(candidateFingerprint(base), candidateFingerprint({ ...base, modifiedAt: base.modifiedAt + 1 }))
+  assert.notEqual(candidateFingerprint(base), candidateFingerprint({ ...base, sizeBytes: base.sizeBytes + 1 }))
 })

@@ -58,34 +58,45 @@ async function observeWindows(): Promise<SystemSnapshot> {
 }
 
 async function observeMac(): Promise<SystemSnapshot> {
-  const [{ stdout: ps }, { stdout: vm }, foregroundPid] = await Promise.all([
-    execFileAsync('ps', ['-axo', 'pid=,comm=,rss=,%cpu=']),
+  const [{ stdout: ps }, { stdout: vm }, foregroundPid, applicationPids] = await Promise.all([
+    execFileAsync('ps', ['-axo', 'pid=,rss=,%cpu=,comm=']),
     execFileAsync('vm_stat', []),
-    getMacForegroundPid()
+    getMacForegroundPid(),
+    getMacApplicationPids()
   ])
-  const processes = ps
-    .trim()
-    .split('\n')
-    .map((line) => line.trim().split(/\s+/))
-    .filter((parts) => parts.length >= 4)
-    .map((parts) => ({
-      pid: Number(parts[0]),
-      name: parts[1].split('/').pop() ?? parts[1],
-      memoryMb: Math.round((Number(parts[2]) / 1024) * 10) / 10,
-      cpu: Number(parts[3]) || null,
-      hasWindow: false
-    }))
-  const freePages = Number(vm.match(/Pages free:\s+(\d+)/)?.[1] ?? 0)
-  const pageSize = Number(vm.match(/page size of (\d+) bytes/)?.[1] ?? 4096)
+  const processes = parseMacProcesses(ps, applicationPids)
   const foreground = processes.find((process) => process.pid === foregroundPid)
   return {
     platform: 'darwin',
-    availableMemoryMb: Math.round((freePages * pageSize) / 1024 / 1024),
+    availableMemoryMb: parseMacAvailableMemoryMb(vm),
     foregroundPid,
     foregroundName: foreground?.name ?? null,
     processes,
     observedAt: new Date().toISOString()
   }
+}
+
+export function parseMacProcesses(output: string, applicationPids = new Set<number>()): ProcessInfo[] {
+  return output
+    .trim()
+    .split('\n')
+    .map((line) => /^\s*(\d+)\s+(\d+)\s+([\d.]+)\s+(.+?)\s*$/.exec(line))
+    .filter((match): match is RegExpExecArray => Boolean(match))
+    .map((match) => ({
+      pid: Number(match[1]),
+      name: match[4].split('/').pop() ?? match[4],
+      memoryMb: Math.round((Number(match[2]) / 1024) * 10) / 10,
+      cpu: Number(match[3]) || null,
+      hasWindow: applicationPids.has(Number(match[1]))
+    }))
+}
+
+export function parseMacAvailableMemoryMb(output: string): number {
+  const pageSize = Number(output.match(/page size of (\d+) bytes/)?.[1] ?? 4096)
+  const pages = (label: string): number => Number(output.match(new RegExp(`Pages ${label}:\\s+(\\d+)`))?.[1] ?? 0)
+  // Inactive and speculative pages are reclaimable without terminating applications.
+  const availablePages = pages('free') + pages('inactive') + pages('speculative')
+  return Math.round((availablePages * pageSize) / 1024 / 1024)
 }
 
 async function getMacForegroundPid(): Promise<number | null> {
@@ -97,6 +108,17 @@ async function getMacForegroundPid(): Promise<number | null> {
   } catch {
     // Without macOS Accessibility permission, fail closed: no process action is allowed.
     return null
+  }
+}
+
+async function getMacApplicationPids(): Promise<Set<number>> {
+  try {
+    const script = 'tell application "System Events" to get unix id of every application process whose background only is false'
+    const { stdout } = await execFileAsync('osascript', ['-e', script])
+    return new Set((stdout.match(/\d+/g) ?? []).map(Number).filter((pid) => pid > 0))
+  } catch {
+    // Without macOS Accessibility permission, no real process becomes actionable.
+    return new Set()
   }
 }
 

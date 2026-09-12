@@ -1,15 +1,18 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, powerSaveBlocker, shell, Tray } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell, Tray } from 'electron'
 import { join } from 'node:path'
-import { is } from '@electron-toolkit/utils'
 import { getState, refreshAndRunPolicy, restoreQuarantine, stageLiveDemo, startFreshStorageScan } from './agent'
 import { isDemoPath } from './demo-paths'
 import { saveProfile } from './store'
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
-let sleepBlockerId: number | null = null
 let isQuitting = false
+let suppressInitialWindow = false
 const isSelfTest = process.argv.includes('--lifeguard-self-test')
+const isVideoDemo = process.argv.includes('--lifeguard-video-demo')
+const hasSingleInstanceLock = app.requestSingleInstanceLock()
+
+if (isVideoDemo) app.disableHardwareAcceleration()
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -22,13 +25,23 @@ function createWindow(): void {
     title: 'Lifeguard',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false,
+      sandbox: true,
       contextIsolation: true,
       nodeIntegration: false
     }
   })
 
-  mainWindow.on('ready-to-show', () => mainWindow?.show())
+  mainWindow.on('ready-to-show', () => {
+    if (!suppressInitialWindow) {
+      if (isVideoDemo) {
+        mainWindow?.maximize()
+        mainWindow?.setAlwaysOnTop(true)
+      }
+      mainWindow?.show()
+      mainWindow?.focus()
+    }
+    suppressInitialWindow = false
+  })
   mainWindow.on('close', (event) => {
     if (!isQuitting) {
       event.preventDefault()
@@ -36,10 +49,16 @@ function createWindow(): void {
     }
   })
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    try {
+      const target = new URL(details.url)
+      if (target.protocol === 'https:') void shell.openExternal(target.toString())
+    } catch {
+      // Malformed and non-HTTPS targets stay inside the denied navigation.
+    }
     return { action: 'deny' }
   })
-  if (is.dev && process.env.ELECTRON_RENDERER_URL) mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
+  mainWindow.webContents.on('will-navigate', (event) => event.preventDefault())
+  if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
   else mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
 }
 
@@ -77,10 +96,6 @@ function registerIpc(): void {
     await refreshAndRunPolicy()
     return getState()
   })
-  ipcMain.handle('profile:update', (_, partial) => {
-    saveProfile(partial)
-    return getState()
-  })
   ipcMain.handle('folder:choose-protected', async () => {
     const folder = await chooseFolder()
     if (folder) saveProfile({ protectedFolders: [folder] })
@@ -92,6 +107,7 @@ function registerIpc(): void {
     return getState()
   })
   ipcMain.handle('quarantine:restore', async (_, id: string) => {
+    if (typeof id !== 'string' || id.length > 100) return getState()
     await restoreQuarantine(id)
     return getState()
   })
@@ -102,9 +118,13 @@ function registerIpc(): void {
   })
 }
 
-app.whenReady().then(async () => {
-  if (!isSelfTest) app.setLoginItemSettings({ openAtLogin: true })
-  if (!isSelfTest) sleepBlockerId = powerSaveBlocker.start('prevent-display-sleep')
+async function startApplication(): Promise<void> {
+  suppressInitialWindow = process.argv.includes('--hidden') || (process.platform === 'darwin' && app.getLoginItemSettings().wasOpenedAtLogin)
+  if (!isSelfTest && app.isPackaged) {
+    app.setLoginItemSettings(process.platform === 'win32'
+      ? { openAtLogin: true, path: process.execPath, args: ['--hidden'] }
+      : { openAtLogin: true })
+  }
   registerIpc()
   if (!isSelfTest) {
     createWindow()
@@ -122,16 +142,36 @@ app.whenReady().then(async () => {
     app.quit()
     return
   }
+  if (isVideoDemo) {
+    setTimeout(() => void stageLiveDemo()
+      .then(() => refreshAndRunPolicy())
+      .catch((error: unknown) => console.error('The isolated video demo could not be staged.', error)), 1200)
+  }
   setInterval(() => void refreshAndRunPolicy().catch(() => undefined), 15_000)
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
     else mainWindow?.show()
   })
-})
+}
+
+if (!hasSingleInstanceLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (!mainWindow) return
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.show()
+    mainWindow.focus()
+  })
+  void app.whenReady().then(startApplication).catch((error: unknown) => {
+    console.error('Lifeguard failed to start safely.', error)
+    isQuitting = true
+    app.quit()
+  })
+}
 
 app.on('before-quit', () => {
   isQuitting = true
-  if (sleepBlockerId !== null) powerSaveBlocker.stop(sleepBlockerId)
 })
 
 app.on('window-all-closed', () => {

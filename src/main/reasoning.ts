@@ -1,13 +1,13 @@
-import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { app } from 'electron'
 import { config as loadEnv } from 'dotenv'
 import { getActions, getReasoningState, getStorageIndex, saveReasoningState } from './store'
-import { runReasoningRequest, toCandidateFeature, type ReasoningDigest } from './reasoning-client'
+import { candidateFingerprint, runReasoningRequest, toCandidateFeature, type LifeguardReasoningEffort, type ReasoningDigest } from './reasoning-client'
 import type { CleanupCandidate } from './storage-indexer'
 import type { ReasoningCandidateRecord, ReasoningPublicState, SystemSnapshot } from '../shared/types'
 
-for (const envPath of new Set([join(process.cwd(), '.env.local'), join(dirname(process.execPath), '.env.local')])) {
+for (const envPath of new Set([join(process.cwd(), '.env.local'), join(dirname(process.execPath), '.env.local'), join(app.getPath('userData'), '.env.local')])) {
   if (existsSync(envPath)) loadEnv({ path: envPath, override: false, quiet: true })
 }
 
@@ -22,12 +22,13 @@ export function reasoningModel(): string {
   return process.env.LIFEGUARD_REASONING_MODEL?.trim() || 'gpt-5.6-luna'
 }
 
-function fingerprint(filePath: string): string {
-  return createHash('sha256').update(filePath.toLowerCase()).digest('hex').slice(0, 20)
+export function reasoningEffort(): LifeguardReasoningEffort {
+  const requested = process.env.LIFEGUARD_REASONING_EFFORT?.trim().toLowerCase()
+  return requested === 'low' || requested === 'high' ? requested : 'medium'
 }
 
 function asRecord(candidate: CleanupCandidate): ReasoningCandidateRecord {
-  return { fingerprint: fingerprint(candidate.path), ...candidate }
+  return { fingerprint: candidateFingerprint(candidate), ...candidate }
 }
 
 export function queueReasoningCandidate(candidate: CleanupCandidate): boolean {
@@ -77,7 +78,7 @@ async function executeReasoning(snapshot: SystemSnapshot | null): Promise<void> 
   state.error = null
   saveReasoningState(state)
   try {
-    const output = await runReasoningRequest(key, state.model, createDigest(snapshot))
+    const output = await runReasoningRequest(key, state.model, createDigest(snapshot), reasoningEffort())
     const allowedFingerprints = new Set(state.pending.map((candidate) => candidate.fingerprint))
     const assessments = output.assessments.filter((assessment) => allowedFingerprints.has(assessment.fingerprint))
     const assessedFingerprints = new Set(assessments.map((assessment) => assessment.fingerprint))

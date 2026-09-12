@@ -12,7 +12,7 @@ The first real-device session is a 24-hour learning period. The app continuously
 
 ## Bounded reasoning model
 
-The optional OpenAI reasoning layer uses `gpt-5.6-luna` with low reasoning effort because this is a periodic, cost-sensitive classification workload. It receives only anonymous fingerprints and coarse features such as category, extension, size, age, location class, deterministic score, volume count, and restore count. It never receives a raw path, filename, application name, or file content, and API responses are created with `store: false`.
+The optional OpenAI reasoning layer uses `gpt-5.6-luna` with medium reasoning effort. It receives only anonymous fingerprints and coarse features such as category, extension, size, age, location class, deterministic score, volume count, and restore count. It never receives a raw path, filename, application name, or file content, and API responses are created with `store: false`.
 
 The response schema permits only `protect` and `neutral`. A `protect` assessment vetoes the candidate. `neutral` returns the candidate to the deterministic safety engine, which independently rechecks the path, canonical duplicate, learning window, and quarantine state. The model has no filesystem or process tools and cannot lower the deterministic importance score or authorize an action.
 

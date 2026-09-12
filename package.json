@@ -9,13 +9,13 @@
     "dev": "electron-vite dev",
     "test": "tsx --test src/main/*.test.ts",
     "reasoning:check": "tsx scripts/reasoning-smoke.ts",
+    "audit:backend": "pnpm test && pnpm exec tsc --noEmit && pnpm build",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "package": "pnpm build && electron-builder --dir",
     "dist": "pnpm build && electron-builder"
   },
   "dependencies": {
-    "@electron-toolkit/utils": "^4.0.0",
     "dotenv": "^17.4.2",
     "electron-store": "^10.0.0",
     "lucide-react": "^0.468.0",
@@ -30,7 +30,7 @@
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
     "@vitejs/plugin-react": "^4.3.4",
-    "electron": "^37.2.6",
+    "electron": "^44.3.0",
     "electron-builder": "^26.0.12",
     "electron-vite": "^3.1.0",
     "tsx": "^4.23.13",

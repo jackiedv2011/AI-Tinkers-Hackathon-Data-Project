@@ -1,6 +1,7 @@
 import OpenAI from 'openai'
 import { zodTextFormat } from 'openai/helpers/zod'
 import { z } from 'zod/v4'
+import { createHash } from 'node:crypto'
 import { extname } from 'node:path'
 import type { ReasoningCandidateRecord } from '../shared/types'
 
@@ -39,6 +40,20 @@ export type ReasoningDigest = {
   candidates: CandidateFeature[]
 }
 
+export type LifeguardReasoningEffort = 'low' | 'medium' | 'high'
+
+export function candidateFingerprint(record: Pick<ReasoningCandidateRecord, 'path' | 'sizeBytes' | 'modifiedAt' | 'category' | 'hash' | 'duplicateOf'>): string {
+  const identity = [
+    record.path.toLowerCase(),
+    record.sizeBytes,
+    Math.trunc(record.modifiedAt),
+    record.category,
+    record.hash ?? '',
+    record.duplicateOf?.toLowerCase() ?? ''
+  ]
+  return createHash('sha256').update(JSON.stringify(identity)).digest('hex').slice(0, 20)
+}
+
 function locationClass(record: ReasoningCandidateRecord): CandidateFeature['locationClass'] {
   if (record.category === 'temp') return 'temporary'
   if (record.category === 'cache') return 'cache'
@@ -66,12 +81,12 @@ export function toCandidateFeature(record: ReasoningCandidateRecord, now = Date.
   }
 }
 
-export async function runReasoningRequest(apiKey: string, model: string, digest: ReasoningDigest): Promise<ReasoningOutput> {
+export async function runReasoningRequest(apiKey: string, model: string, digest: ReasoningDigest, effort: LifeguardReasoningEffort = 'medium'): Promise<ReasoningOutput> {
   const client = new OpenAI({ apiKey, timeout: 25_000, maxRetries: 1 })
   const response = await client.responses.parse({
     model,
     store: false,
-    reasoning: { effort: 'low' },
+    reasoning: { effort },
     instructions: [
       'You are Lifeguard Context Reasoner, a conservative privacy-preserving advisor for a desktop resource guardian.',
       'You receive anonymized metadata only. Never infer a filename, identity, file contents, or exact location.',

@@ -9,10 +9,12 @@ import { isInside } from './path-policy'
 import { queuePriorityPath, restartStorageCycle, scanStorageTick, type CleanupCandidate } from './storage-indexer'
 import { getDemoFolders, isDemoPath } from './demo-paths'
 import { getReasoningPublicState, maybeRunReasoning, queueReasoningCandidate, takeReasoningApprovedCandidates } from './reasoning'
+import { verifyCandidateIdentity } from './candidate-identity'
 import type { ActionLogEntry, LifeguardState, ProcessInfo, QuarantineEntry, SystemSnapshot } from '../shared/types'
 
 const observedSince = new Map<number, number>()
 const observedActivity = new Map<number, number>()
+const observedNames = new Map<number, string>()
 const NEVER_PAUSE = new Set(['onedrive', 'dropbox', 'googledrivefs', 'icloud', 'icloud drive', 'antimalware service executable', 'msmpeng'])
 let snapshot: SystemSnapshot | null = null
 let demoWorker: ChildProcess | null = null
@@ -45,8 +47,15 @@ async function moveSafely(source: string, target: string): Promise<void> {
     await rename(source, target)
   } catch (error: unknown) {
     if ((error as NodeJS.ErrnoException).code !== 'EXDEV') throw error
-    await copyFile(source, target)
-    await unlink(source)
+    try {
+      await copyFile(source, target)
+      const [sourceHash, targetHash] = await Promise.all([hashFile(source), hashFile(target)])
+      if (sourceHash !== targetHash) throw new Error('Cross-volume copy integrity check failed.')
+      await unlink(source)
+    } catch (copyError) {
+      await unlink(target).catch(() => undefined)
+      throw copyError
+    }
   }
 }
 
@@ -76,7 +85,8 @@ async function quarantineCandidate(candidate: CleanupCandidate): Promise<boolean
   }
 
   try {
-    const hash = candidate.hash ?? await hashFile(candidate.path)
+    const hash = await verifyCandidateIdentity(candidate)
+    if (!hash) return false
     const quarantinePath = uniqueQuarantinePath(candidate.path)
     await moveSafely(candidate.path, quarantinePath)
     const entry: QuarantineEntry = {
@@ -180,7 +190,21 @@ async function runProcessPolicy(current: SystemSnapshot): Promise<boolean> {
 async function executePolicyCycle(): Promise<SystemSnapshot> {
   snapshot = await observeSystem()
   const now = Date.now()
-  for (const process of snapshot.processes) if (!observedSince.has(process.pid)) observedSince.set(process.pid, now)
+  const livePids = new Set(snapshot.processes.map((process) => process.pid))
+  for (const pid of observedSince.keys()) {
+    if (!livePids.has(pid)) {
+      observedSince.delete(pid)
+      observedActivity.delete(pid)
+      observedNames.delete(pid)
+    }
+  }
+  for (const process of snapshot.processes) {
+    if (observedNames.get(process.pid) !== process.name) {
+      observedSince.set(process.pid, now)
+      observedActivity.delete(process.pid)
+      observedNames.set(process.pid, process.name)
+    }
+  }
   if (snapshot.foregroundPid) observedActivity.set(snapshot.foregroundPid, now)
   await maybeRunReasoning(snapshot)
   for (const approved of takeReasoningApprovedCandidates()) await quarantineCandidate(approved)

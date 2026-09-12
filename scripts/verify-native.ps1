@@ -72,4 +72,6 @@ try {
   Pop-Location
 }
 
-Start-Process -FilePath $executable -WindowStyle Hidden
+if (-not $env:CI) {
+  Start-Process -FilePath $executable -WindowStyle Hidden
+}
