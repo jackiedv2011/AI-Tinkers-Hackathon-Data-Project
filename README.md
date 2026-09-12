@@ -60,6 +60,31 @@ The unpacked Windows application is written to `dist/win-unpacked/Lifeguard.exe`
 
 The complete non-UI readiness record and remaining external gates are in [docs/BACKEND_AUDIT.md](docs/BACKEND_AUDIT.md).
 
+## Python brokered-action demo
+
+The repository also contains a Windows-only Python baseline for the three-authority flow: Anthropic diagnoses and proposes, deterministic policy admits, and a person approves or denies through ntfy before Lifeguard acts. It is independent of the Electron interface.
+
+Install Python 3.11 or newer and [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/) (the `cloudflared.exe` binary must be on `PATH`), then run:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+$env:ANTHROPIC_API_KEY = "your-key"
+python -m lifeguard selftest
+```
+
+Launch the growing demo worker through Lifeguard so it receives an opaque managed capability:
+
+```powershell
+python -m lifeguard run --project demo -- python -m lifeguard.worker_demo
+python -m lifeguard agent
+```
+
+The agent prints a random 16-hex-character ntfy topic at startup. Subscribe to that topic in the ntfy mobile app. Under pressure or after the worker grows by about 20 MB, Anthropic receives only capability IDs and measurements—not raw PIDs—and proposes an action. The Approve/Deny buttons send their single-use token in the `Authorization` header through a cloudflared quick tunnel. The local FastAPI server listens only on `127.0.0.1:8000`.
+
+The startup self-test intentionally checks live Anthropic connectivity, so `ANTHROPIC_API_KEY` must be set. Quarantine reports `quarantined_bytes` separately from `reclaimed_bytes`; a same-volume move has zero reclaimed bytes.
+
 ## Architecture and safety
 
 Electron's main process owns all operating-system access. `observer.ts` reads memory, foreground process, process inventory, and fixed volumes. `storage-indexer.ts` advances a persistent bounded scan. `path-policy.ts` provides deterministic exclusions and importance scoring. `reasoning.ts` sends redacted feature digests and accepts only `protect` or `neutral` structured assessments. `agent.ts` is the sole action authority and writes the recovery ledger. The React renderer receives a narrow IPC bridge and has no direct filesystem access.
