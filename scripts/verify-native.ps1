@@ -43,7 +43,7 @@ try {
   }
   $allowedRoots = @(
     (Join-Path $env:APPDATA 'lifeguard\DemoDrive'),
-    (Join-Path $env:TEMP 'Lifeguard-Demo')
+    (Join-Path $env:USERPROFILE 'AppData\Local\Temp\Lifeguard-Demo')
   )
   $pathChecks = foreach ($entry in $newEntries) {
     @($allowedRoots | Where-Object { $entry.originalPath.StartsWith($_, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0
