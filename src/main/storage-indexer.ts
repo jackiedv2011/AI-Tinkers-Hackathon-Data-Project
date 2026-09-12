@@ -2,11 +2,11 @@ import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { lstat, readdir } from 'node:fs/promises'
 import { app } from 'electron'
-import { join } from 'node:path'
 import type { IndexedFile, Profile, StorageIndexState } from '../shared/types'
 import { getStorageIndex, saveStorageIndex } from './store'
 import { discoverFixedDrives } from './observer'
-import { classifyDisposablePath, importanceScore, isInside, shouldSkipPath } from './path-policy'
+import { classifyDisposablePath, importanceScore, shouldSkipPath } from './path-policy'
+import { isDemoPath } from './demo-paths'
 
 export type CleanupCandidate = {
   path: string
@@ -120,11 +120,10 @@ export async function scanStorageTick(profile: Profile, handleCandidate: Candida
   const started = Date.now()
   let filesThisTick = 0
   const userHome = app.getPath('home')
-  const demoFolder = join(app.getPath('userData'), 'DemoDrive')
   const actedPaths = new Set<string>()
   while (index.queue.length && filesThisTick < profile.scanBudgetFiles && Date.now() - started < profile.scanBudgetMs) {
     const target = index.queue.pop()!
-    const isDemoTarget = profile.demoMode && isInside(target, demoFolder)
+    const isDemoTarget = profile.demoMode && isDemoPath(target)
     if (!isDemoTarget && shouldSkipPath(target, userHome, profile.protectedFolders, profile.quarantineFolder)) {
       index.excludedPaths += 1
       continue

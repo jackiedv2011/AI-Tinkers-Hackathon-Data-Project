@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, powerSaveBlocke
 import { join } from 'node:path'
 import { is } from '@electron-toolkit/utils'
 import { getState, refreshAndRunPolicy, restoreQuarantine, stageLiveDemo, startFreshStorageScan } from './agent'
+import { isDemoPath } from './demo-paths'
 import { saveProfile } from './store'
 
 let mainWindow: BrowserWindow | null = null
@@ -111,9 +112,12 @@ app.whenReady().then(async () => {
   }
   await refreshAndRunPolicy()
   if (isSelfTest) {
+    const testStartedAt = Date.now()
     await stageLiveDemo()
     await new Promise((resolve) => setTimeout(resolve, 750))
     await refreshAndRunPolicy()
+    const newRecoverableItem = getState().quarantine.find((entry) => !entry.restoredAt && isDemoPath(entry.originalPath) && new Date(entry.quarantinedAt).getTime() >= testStartedAt)
+    if (newRecoverableItem) await restoreQuarantine(newRecoverableItem.id)
     isQuitting = true
     app.quit()
     return

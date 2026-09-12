@@ -2,12 +2,12 @@ import { ChildProcess, fork } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { access, copyFile, mkdir, rename, unlink, utimes, writeFile } from 'node:fs/promises'
-import { app } from 'electron'
 import { basename, dirname, join, parse } from 'node:path'
 import { appendAction, getActions, getProfile, getQuarantine, getStorageIndex, saveProfile, saveQuarantine } from './store'
 import { observeSystem, requestGracefulClose } from './observer'
 import { isInside } from './path-policy'
 import { queuePriorityPath, restartStorageCycle, scanStorageTick, type CleanupCandidate } from './storage-indexer'
+import { getDemoFolders, isDemoPath } from './demo-paths'
 import type { ActionLogEntry, LifeguardState, ProcessInfo, QuarantineEntry, SystemSnapshot } from '../shared/types'
 
 const observedSince = new Map<number, number>()
@@ -61,8 +61,7 @@ function learningPeriodComplete(): boolean {
 
 async function quarantineCandidate(candidate: CleanupCandidate): Promise<boolean> {
   const profile = getProfile()
-  const demoFolder = join(app.getPath('userData'), 'DemoDrive')
-  const isDemo = profile.demoMode && isInside(candidate.path, demoFolder)
+  const isDemo = profile.demoMode && isDemoPath(candidate.path)
   if (!isDemo && !learningPeriodComplete()) return false
   if (profile.protectedFolders.some((folder) => folder && isInside(candidate.path, folder))) return false
   if (isInside(candidate.path, profile.quarantineFolder)) return false
@@ -201,17 +200,21 @@ export async function startFreshStorageScan(): Promise<void> {
 }
 
 export async function stageLiveDemo(): Promise<void> {
-  const demoFolder = join(app.getPath('userData'), 'DemoDrive')
+  const [demoFolder, demoTempFolder] = getDemoFolders()
   await mkdir(demoFolder, { recursive: true })
+  await mkdir(demoTempFolder, { recursive: true })
   const data = Buffer.alloc(4 * 1024 * 1024, 5)
   const demoId = Date.now()
   const primary = join(demoFolder, `Lifeguard-demo-${demoId}-installer.exe`)
   const duplicate = join(demoFolder, `Lifeguard-demo-${demoId}-installer-copy.exe`)
   await writeFile(primary, data)
   await writeFile(duplicate, data)
+  const staleCache = join(demoTempFolder, `Lifeguard-demo-${demoId}-stale-cache.tmp`)
+  await writeFile(staleCache, Buffer.alloc(3 * 1024 * 1024, 7))
   const oldTime = new Date(Date.now() - 45 * 86_400_000)
   await utimes(primary, oldTime, oldTime)
   await utimes(duplicate, oldTime, oldTime)
+  await utimes(staleCache, oldTime, oldTime)
 
   if (!demoWorker) {
     const workerPath = join(__dirname, 'demo-worker.js')
@@ -220,6 +223,7 @@ export async function stageLiveDemo(): Promise<void> {
   }
   saveProfile({ demoMode: true })
   await queuePriorityPath(demoFolder)
+  await queuePriorityPath(demoTempFolder)
 }
 
 export function getState(): LifeguardState {

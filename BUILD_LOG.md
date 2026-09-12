@@ -15,7 +15,7 @@ This repository was initialized for the AI Tinkers Hackathon as a net-new Lifegu
 - Cross-drive exact SHA-256 duplicate detection, known-cache detection, recoverable Quarantine, and Restore flow
 - Controlled live-demo memory worker and autonomous scheduler
 - Local action log, workspace protection policy, and desktop tray integration
-- Automated path-policy tests and a packaged native self-test path
+- Automated path-policy tests and a repeatable packaged native suite covering duplicate cleanup, stale-temp cleanup, integrity, quarantine, restoration, and fixture containment
 
 ## Safety boundary
 

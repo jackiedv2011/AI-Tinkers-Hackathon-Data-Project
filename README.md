@@ -26,7 +26,7 @@ pnpm install
 pnpm dev
 ```
 
-Use **Stage safe live demo** to create two synthetic 4 MB installer files and an isolated memory worker inside Lifeguard's app-data directory. One click stages the conditions; the normal background policy discovers the duplicate, moves one copy into recoverable quarantine, and closes the worker without another prompt.
+Use **Stage safe live demo** to create two synthetic 4 MB installer files, a stale 3 MB temporary file, and an isolated memory worker inside Lifeguard-owned fixture directories. One click stages the conditions; the normal background policy discovers the duplicate and stale temporary file, moves them into recoverable quarantine, and closes the worker without another prompt.
 
 ## Build
 
@@ -35,6 +35,14 @@ pnpm exec tsc --noEmit
 pnpm build
 pnpm package
 ```
+
+On Windows, the complete native verification suite can be rerun with:
+
+```powershell
+.\scripts\verify-native.ps1
+```
+
+It validates unit policy boundaries, compilation, packaging, fixed-drive discovery, duplicate cleanup, stale-temp cleanup, graceful memory reclamation, SHA-256 integrity, quarantine, restoration, and fixture-only mutation before restarting Lifeguard.
 
 The unpacked Windows application is written to `dist/win-unpacked/Lifeguard.exe`. A macOS package must be produced and verified on macOS because Electron Builder does not cross-sign a Mac application from Windows.
 
