@@ -5,8 +5,8 @@ import { app } from 'electron'
 import type { IndexedFile, Profile, StorageIndexState } from '../shared/types'
 import { getStorageIndex, saveStorageIndex } from './store'
 import { discoverFixedDrives } from './observer'
-import { classifyDisposablePath, importanceScore, shouldSkipPath } from './path-policy'
-import { isDemoPath } from './demo-paths'
+import { classifyDisposablePath, importanceScore, isInside, shouldSkipPath } from './path-policy'
+import { getDemoFolders, isDemoPath } from './demo-paths'
 
 export type CleanupCandidate = {
   path: string
@@ -146,7 +146,13 @@ export async function scanStorageTick(profile: Profile, handleCandidate: Candida
       if (info.size < profile.minCandidateSizeBytes || info.size > 512 * 1024 * 1024) continue
 
       const file: IndexedFile = { path: target, sizeBytes: info.size, modifiedAt: info.mtimeMs, accessedAt: info.atimeMs }
-      const disposable = classifyDisposablePath(target, userHome)
+      // The packaged app can inherit a sandboxed HOME on macOS CI.  Its demo
+      // cache is still an isolated, app-created fixture, so recognize that
+      // precise folder directly instead of weakening the normal path policy.
+      const demoTempFolder = isDemoTarget ? getDemoFolders()[1] : ''
+      const disposable = demoTempFolder && isInside(target, demoTempFolder)
+        ? 'temp'
+        : classifyDisposablePath(target, userHome)
       const importance = importanceScore(target, info.mtimeMs, info.atimeMs, profile.protectedFolders, disposable)
       if (disposable && isOldEnough(info.mtimeMs, isDemoTarget ? 0 : profile.disposableAgeDays) && importance <= 0) {
         if (await handleCandidate({
