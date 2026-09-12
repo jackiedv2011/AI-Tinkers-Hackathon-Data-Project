@@ -1,14 +1,19 @@
-export type ActionType = 'file_quarantine' | 'process_paused' | 'restore'
+export type ActionType = 'file_quarantine' | 'cache_quarantine' | 'process_paused' | 'restore'
 
 export type Profile = {
   protectedFolders: string[]
   protectedApps: string[]
-  pausableProcesses: string[]
-  downloadsFolder: string
+  autoPausableApps: string[]
   quarantineFolder: string
   duplicateAgeDays: number
+  disposableAgeDays: number
   memoryThresholdMb: number
   idleMinutes: number
+  scanBudgetFiles: number
+  scanBudgetMs: number
+  minCandidateSizeBytes: number
+  learningHours: number
+  armedAt: string
   demoMode: boolean
 }
 
@@ -28,6 +33,8 @@ export type QuarantineEntry = {
   quarantinePath: string
   hash: string
   sizeBytes: number
+  category: 'duplicate' | 'cache' | 'temp'
+  reason: string
   quarantinedAt: string
   restoredAt: string | null
 }
@@ -49,10 +56,42 @@ export type SystemSnapshot = {
   observedAt: string
 }
 
+export type DriveInfo = {
+  root: string
+  label: string
+  totalBytes: number
+  freeBytes: number
+}
+
+export type IndexedFile = {
+  path: string
+  sizeBytes: number
+  modifiedAt: number
+  accessedAt: number
+  hash?: string
+}
+
+export type StorageIndexState = {
+  volumes: DriveInfo[]
+  queue: string[]
+  processedFiles: number
+  processedBytes: number
+  excludedPaths: number
+  errors: number
+  cycle: number
+  status: 'discovering' | 'indexing' | 'complete' | 'paused'
+  cycleStartedAt: string | null
+  lastCompletedAt: string | null
+  lastTickAt: string | null
+  representatives: Record<string, IndexedFile[]>
+  hashes: Record<string, IndexedFile[]>
+}
+
 export type LifeguardState = {
   profile: Profile
   actions: ActionLogEntry[]
   quarantine: QuarantineEntry[]
   snapshot: SystemSnapshot | null
+  storage: StorageIndexState
   watching: boolean
 }

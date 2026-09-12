@@ -1,13 +1,14 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, powerSaveBlocker, shell, Tray } from 'electron'
 import { join } from 'node:path'
 import { is } from '@electron-toolkit/utils'
-import { getState, refreshAndRunPolicy, restoreQuarantine, scanDuplicates, stageLiveDemo } from './agent'
+import { getState, refreshAndRunPolicy, restoreQuarantine, stageLiveDemo, startFreshStorageScan } from './agent'
 import { saveProfile } from './store'
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let sleepBlockerId: number | null = null
 let isQuitting = false
+const isSelfTest = process.argv.includes('--lifeguard-self-test')
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -84,13 +85,9 @@ function registerIpc(): void {
     if (folder) saveProfile({ protectedFolders: [folder] })
     return getState()
   })
-  ipcMain.handle('folder:choose-downloads', async () => {
-    const folder = await chooseFolder()
-    if (folder) saveProfile({ downloadsFolder: folder })
-    return getState()
-  })
-  ipcMain.handle('duplicates:scan', async () => {
-    await scanDuplicates()
+  ipcMain.handle('storage:scan-now', async () => {
+    await startFreshStorageScan()
+    await refreshAndRunPolicy()
     return getState()
   })
   ipcMain.handle('quarantine:restore', async (_, id: string) => {
@@ -99,19 +96,29 @@ function registerIpc(): void {
   })
   ipcMain.handle('demo:stage', async () => {
     await stageLiveDemo()
-    setTimeout(() => void refreshAndRunPolicy(), 4000)
+    setTimeout(() => void refreshAndRunPolicy().catch(() => undefined), 2500)
     return getState()
   })
 }
 
 app.whenReady().then(async () => {
-  app.setLoginItemSettings({ openAtLogin: true })
-  sleepBlockerId = powerSaveBlocker.start('prevent-display-sleep')
+  if (!isSelfTest) app.setLoginItemSettings({ openAtLogin: true })
+  if (!isSelfTest) sleepBlockerId = powerSaveBlocker.start('prevent-display-sleep')
   registerIpc()
-  createWindow()
-  createTray()
+  if (!isSelfTest) {
+    createWindow()
+    createTray()
+  }
   await refreshAndRunPolicy()
-  setInterval(() => void refreshAndRunPolicy(), 30_000)
+  if (isSelfTest) {
+    await stageLiveDemo()
+    await new Promise((resolve) => setTimeout(resolve, 750))
+    await refreshAndRunPolicy()
+    isQuitting = true
+    app.quit()
+    return
+  }
+  setInterval(() => void refreshAndRunPolicy().catch(() => undefined), 15_000)
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
     else mainWindow?.show()

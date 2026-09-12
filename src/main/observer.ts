@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import type { ProcessInfo, SystemSnapshot } from '../shared/types'
+import type { DriveInfo, ProcessInfo, SystemSnapshot } from '../shared/types'
 
 const execFileAsync = promisify(execFile)
 
@@ -111,6 +111,38 @@ export async function observeSystem(): Promise<SystemSnapshot> {
     processes: [],
     observedAt: new Date().toISOString()
   }
+}
+
+export async function discoverFixedDrives(): Promise<DriveInfo[]> {
+  if (process.platform === 'win32') {
+    const script = String.raw`Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | ForEach-Object { [PSCustomObject]@{ root = "$($_.DeviceID)\\"; label = if ($_.VolumeName) { $_.VolumeName } else { $_.DeviceID }; totalBytes = [double]$_.Size; freeBytes = [double]$_.FreeSpace } } | ConvertTo-Json -Compress`
+    const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+      windowsHide: true
+    })
+    const parsed = JSON.parse(stdout || '[]') as DriveInfo | DriveInfo[]
+    return (Array.isArray(parsed) ? parsed : [parsed]).filter((drive) => drive.root && drive.totalBytes > 0)
+  }
+  if (process.platform === 'darwin') {
+    const { stdout } = await execFileAsync('df', ['-kP', '-l'])
+    const rows = stdout.trim().split('\n').slice(1)
+    const seen = new Set<string>()
+    const drives: DriveInfo[] = []
+    for (const row of rows) {
+      const parts = row.trim().split(/\s+/)
+      if (parts.length < 6) continue
+      const root = parts.slice(5).join(' ')
+      if (seen.has(root) || root.startsWith('/System/Volumes/')) continue
+      seen.add(root)
+      drives.push({
+        root,
+        label: root === '/' ? 'Macintosh HD' : root.split('/').pop() || root,
+        totalBytes: Number(parts[1]) * 1024,
+        freeBytes: Number(parts[3]) * 1024
+      })
+    }
+    return drives
+  }
+  return []
 }
 
 export async function requestGracefulClose(pid: number): Promise<boolean> {

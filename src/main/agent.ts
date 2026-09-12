@@ -1,39 +1,30 @@
 import { ChildProcess, fork } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { access, copyFile, mkdir, readdir, rename, stat, unlink } from 'node:fs/promises'
-import { basename, dirname, extname, join, parse, relative, resolve } from 'node:path'
-import { appendAction, getActions, getProfile, getQuarantine, saveProfile, saveQuarantine } from './store'
+import { access, copyFile, mkdir, rename, unlink, utimes, writeFile } from 'node:fs/promises'
+import { app } from 'electron'
+import { basename, dirname, join, parse } from 'node:path'
+import { appendAction, getActions, getProfile, getQuarantine, getStorageIndex, saveProfile, saveQuarantine } from './store'
 import { observeSystem, requestGracefulClose } from './observer'
+import { isInside } from './path-policy'
+import { queuePriorityPath, restartStorageCycle, scanStorageTick, type CleanupCandidate } from './storage-indexer'
 import type { ActionLogEntry, LifeguardState, ProcessInfo, QuarantineEntry, SystemSnapshot } from '../shared/types'
 
-const SAFE_EXTENSIONS = new Set(['.zip', '.msi', '.exe'])
-const observedActivity = new Map<number, string>()
+const observedSince = new Map<number, number>()
+const observedActivity = new Map<number, number>()
+const NEVER_PAUSE = new Set(['onedrive', 'dropbox', 'googledrivefs', 'icloud', 'icloud drive', 'antimalware service executable', 'msmpeng'])
 let snapshot: SystemSnapshot | null = null
 let demoWorker: ChildProcess | null = null
 let demoWorkerPid: number | null = null
+let refreshInFlight: Promise<SystemSnapshot> | null = null
 
 function formatBytes(bytes: number): string {
-  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`
-  return `${Math.max(1, Math.round(bytes / 1024 / 1024))} MB`
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`
+  return `${Math.max(1, Math.round(bytes / 1024 ** 2))} MB`
 }
 
 function logAction(input: Omit<ActionLogEntry, 'id' | 'timestamp' | 'restoredAt'>): void {
-  appendAction({
-    id: randomUUID(),
-    timestamp: new Date().toISOString(),
-    restoredAt: null,
-    ...input
-  })
-}
-
-function isInside(candidate: string, parent: string): boolean {
-  const pathBetween = relative(resolve(parent), resolve(candidate))
-  return pathBetween === '' || (!pathBetween.startsWith('..') && !pathBetween.startsWith('/') && !pathBetween.startsWith('\\'))
-}
-
-function isProtected(filePath: string): boolean {
-  return getProfile().protectedFolders.some((folder) => folder && isInside(filePath, folder))
+  appendAction({ id: randomUUID(), timestamp: new Date().toISOString(), restoredAt: null, ...input })
 }
 
 async function hashFile(filePath: string): Promise<string> {
@@ -47,21 +38,6 @@ async function hashFile(filePath: string): Promise<string> {
   })
 }
 
-async function listFiles(root: string): Promise<string[]> {
-  const files: string[] = []
-  const walk = async (directory: string): Promise<void> => {
-    const entries = await readdir(directory, { withFileTypes: true })
-    for (const entry of entries) {
-      if (entry.name.startsWith('.')) continue
-      const child = join(directory, entry.name)
-      if (entry.isDirectory()) await walk(child)
-      if (entry.isFile()) files.push(child)
-    }
-  }
-  await walk(root)
-  return files
-}
-
 async function moveSafely(source: string, target: string): Promise<void> {
   await mkdir(dirname(target), { recursive: true })
   try {
@@ -73,63 +49,58 @@ async function moveSafely(source: string, target: string): Promise<void> {
   }
 }
 
-function uniqueQuarantinePath(filePath: string, hash: string): string {
-  const profile = getProfile()
+function uniqueQuarantinePath(filePath: string): string {
   const item = parse(filePath)
-  return join(profile.quarantineFolder, `${item.name}-${hash.slice(0, 8)}${item.ext}`)
+  return join(getProfile().quarantineFolder, `${item.name}-${randomUUID().slice(0, 8)}${item.ext}`)
 }
 
-export async function scanDuplicates(): Promise<number> {
+function learningPeriodComplete(): boolean {
   const profile = getProfile()
-  if (!profile.downloadsFolder) return 0
-  try {
-    await access(profile.downloadsFolder)
-  } catch {
-    return 0
-  }
+  return Date.now() >= new Date(profile.armedAt).getTime() + profile.learningHours * 3_600_000
+}
 
-  const oldestAllowed = Date.now() - profile.duplicateAgeDays * 24 * 60 * 60 * 1000
-  const candidates: { path: string; size: number; modified: number; hash: string }[] = []
-  for (const filePath of await listFiles(profile.downloadsFolder)) {
-    if (isProtected(filePath) || isInside(filePath, profile.quarantineFolder)) continue
-    if (!SAFE_EXTENSIONS.has(extname(filePath).toLowerCase())) continue
-    const info = await stat(filePath)
-    if (info.mtimeMs > oldestAllowed) continue
-    candidates.push({ path: filePath, size: info.size, modified: info.mtimeMs, hash: await hashFile(filePath) })
-  }
-
-  const groups = new Map<string, typeof candidates>()
-  for (const candidate of candidates) groups.set(candidate.hash, [...(groups.get(candidate.hash) ?? []), candidate])
-  let count = 0
-  const alreadyHandled = new Set(getQuarantine().filter((entry) => !entry.restoredAt).map((entry) => entry.originalPath))
-
-  for (const [hash, group] of groups) {
-    if (group.length < 2) continue
-    const sorted = [...group].sort((a, b) => b.modified - a.modified)
-    for (const redundant of sorted.slice(1)) {
-      if (alreadyHandled.has(redundant.path)) continue
-      const quarantinePath = uniqueQuarantinePath(redundant.path, hash)
-      await moveSafely(redundant.path, quarantinePath)
-      const entry: QuarantineEntry = {
-        id: randomUUID(),
-        originalPath: redundant.path,
-        quarantinePath,
-        hash,
-        sizeBytes: redundant.size,
-        quarantinedAt: new Date().toISOString(),
-        restoredAt: null
-      }
-      saveQuarantine([entry, ...getQuarantine()])
-      logAction({
-        type: 'file_quarantine',
-        rule: 'duplicate-download-rule',
-        detail: `Quarantined ${basename(redundant.path)} (${formatBytes(redundant.size)}) - exact match to ${basename(sorted[0].path)}.`,
-        reversible: true
-      })
-      count += 1
+async function quarantineCandidate(candidate: CleanupCandidate): Promise<boolean> {
+  const profile = getProfile()
+  const demoFolder = join(app.getPath('userData'), 'DemoDrive')
+  const isDemo = profile.demoMode && isInside(candidate.path, demoFolder)
+  if (!isDemo && !learningPeriodComplete()) return false
+  if (profile.protectedFolders.some((folder) => folder && isInside(candidate.path, folder))) return false
+  if (isInside(candidate.path, profile.quarantineFolder)) return false
+  if (getQuarantine().some((entry) => !entry.restoredAt && entry.originalPath === candidate.path)) return false
+  if (candidate.category === 'duplicate' && candidate.duplicateOf) {
+    try {
+      await access(candidate.duplicateOf)
+    } catch {
+      return false
     }
   }
-  return count
+
+  try {
+    const hash = candidate.hash ?? await hashFile(candidate.path)
+    const quarantinePath = uniqueQuarantinePath(candidate.path)
+    await moveSafely(candidate.path, quarantinePath)
+    const entry: QuarantineEntry = {
+      id: randomUUID(),
+      originalPath: candidate.path,
+      quarantinePath,
+      hash,
+      sizeBytes: candidate.sizeBytes,
+      category: candidate.category,
+      reason: candidate.reason,
+      quarantinedAt: new Date().toISOString(),
+      restoredAt: null
+    }
+    saveQuarantine([entry, ...getQuarantine()])
+    logAction({
+      type: candidate.category === 'duplicate' ? 'file_quarantine' : 'cache_quarantine',
+      rule: candidate.category === 'duplicate' ? 'whole-drive-exact-duplicate' : 'known-disposable-path',
+      detail: `Moved ${basename(candidate.path)} (${formatBytes(candidate.sizeBytes)}) to recoverable quarantine. ${candidate.reason}.`,
+      reversible: true
+    })
+    return true
+  } catch {
+    return false
+  }
 }
 
 export async function restoreQuarantine(id: string): Promise<boolean> {
@@ -149,26 +120,19 @@ export async function restoreQuarantine(id: string): Promise<boolean> {
     // The original path is available.
   }
   await moveSafely(entry.quarantinePath, destination)
-  const items = getQuarantine().map((item) => (item.id === id ? { ...item, restoredAt: new Date().toISOString() } : item))
-  saveQuarantine(items)
-  logAction({
-    type: 'restore',
-    rule: 'quarantine-restore',
-    detail: `Restored ${basename(destination)} to ${dirname(destination)}.`,
-    reversible: false
-  })
+  saveQuarantine(getQuarantine().map((item) => item.id === id ? { ...item, restoredAt: new Date().toISOString() } : item))
+  logAction({ type: 'restore', rule: 'quarantine-restore', detail: `Restored ${basename(destination)} to ${dirname(destination)}.`, reversible: false })
   return true
 }
 
-function isPausable(process: ProcessInfo): boolean {
-  const profile = getProfile()
-  return profile.pausableProcesses.some((name) => name.toLowerCase() === process.name.toLowerCase())
+function matchesAutoPausable(process: ProcessInfo): boolean {
+  const processName = process.name.toLowerCase()
+  return getProfile().autoPausableApps.some((name) => processName === name.toLowerCase() || processName.startsWith(`${name.toLowerCase()}-`))
 }
 
 function inactiveForMinutes(process: ProcessInfo): number {
-  const lastActive = observedActivity.get(process.pid)
-  if (!lastActive) return Number.POSITIVE_INFINITY
-  return (Date.now() - new Date(lastActive).getTime()) / 60_000
+  const latestContext = Math.max(observedSince.get(process.pid) ?? Date.now(), observedActivity.get(process.pid) ?? 0)
+  return (Date.now() - latestContext) / 60_000
 }
 
 async function pauseDemoWorker(): Promise<boolean> {
@@ -190,61 +154,72 @@ async function pauseDemoWorker(): Promise<boolean> {
 
 async function runProcessPolicy(current: SystemSnapshot): Promise<boolean> {
   const profile = getProfile()
-  // macOS requires Accessibility permission to identify the foreground app. If
-  // that context is unavailable, Lifeguard must fail closed rather than risk it.
   if (current.platform === 'darwin' && !current.foregroundPid) return false
-  if (current.availableMemoryMb >= profile.memoryThresholdMb) return false
+  const underPressure = current.availableMemoryMb < profile.memoryThresholdMb
+  if (!underPressure && !demoWorkerPid) return false
   const candidates = current.processes
     .filter((process) => process.pid !== current.foregroundPid)
+    .filter((process) => !NEVER_PAUSE.has(process.name.toLowerCase()))
     .filter((process) => !profile.protectedApps.some((name) => name.toLowerCase() === process.name.toLowerCase()))
-    .filter((process) => isPausable(process) || process.pid === demoWorkerPid)
-    .filter((process) => inactiveForMinutes(process) >= profile.idleMinutes)
+    .filter((process) => process.pid === demoWorkerPid || (process.hasWindow && matchesAutoPausable(process)))
+    .filter((process) => process.pid === demoWorkerPid || inactiveForMinutes(process) >= profile.idleMinutes)
     .sort((a, b) => b.memoryMb - a.memoryMb)
   const candidate = candidates[0]
   if (!candidate) return false
-
   const closed = candidate.pid === demoWorkerPid ? await pauseDemoWorker() : await requestGracefulClose(candidate.pid)
   if (!closed) return false
   logAction({
     type: 'process_paused',
-    rule: 'memory-pressure-rule',
-    detail: `Paused ${candidate.name} (${Math.round(candidate.memoryMb)} MB) because available memory was ${Math.round(current.availableMemoryMb)} MB and it was inactive.`,
+    rule: 'context-aware-memory-pressure',
+    detail: `Closed idle ${candidate.name} gracefully (${Math.round(candidate.memoryMb)} MB) while memory was constrained. Foreground work and sync clients stayed protected.`,
     reversible: candidate.pid === demoWorkerPid
   })
   return true
 }
 
-export async function refreshAndRunPolicy(): Promise<SystemSnapshot> {
+async function executePolicyCycle(): Promise<SystemSnapshot> {
   snapshot = await observeSystem()
-  if (snapshot.foregroundPid) observedActivity.set(snapshot.foregroundPid, snapshot.observedAt)
+  const now = Date.now()
+  for (const process of snapshot.processes) if (!observedSince.has(process.pid)) observedSince.set(process.pid, now)
+  if (snapshot.foregroundPid) observedActivity.set(snapshot.foregroundPid, now)
   await runProcessPolicy(snapshot)
-  await scanDuplicates()
+  await scanStorageTick(getProfile(), quarantineCandidate)
+  if (getProfile().demoMode) saveProfile({ demoMode: false })
   return snapshot
 }
 
+export function refreshAndRunPolicy(): Promise<SystemSnapshot> {
+  if (refreshInFlight) return refreshInFlight
+  refreshInFlight = executePolicyCycle().finally(() => {
+    refreshInFlight = null
+  })
+  return refreshInFlight
+}
+
+export async function startFreshStorageScan(): Promise<void> {
+  await restartStorageCycle()
+}
+
 export async function stageLiveDemo(): Promise<void> {
-  const profile = getProfile()
-  if (!profile.downloadsFolder) throw new Error('Choose a folder Lifeguard may inspect before staging the demo.')
-  await mkdir(profile.downloadsFolder, { recursive: true })
+  const demoFolder = join(app.getPath('userData'), 'DemoDrive')
+  await mkdir(demoFolder, { recursive: true })
   const data = Buffer.alloc(4 * 1024 * 1024, 5)
-  const primary = join(profile.downloadsFolder, 'Lifeguard-demo-installer.zip')
-  const duplicate = join(profile.downloadsFolder, 'Lifeguard-demo-installer-copy.zip')
-  const { writeFile } = await import('node:fs/promises')
+  const demoId = Date.now()
+  const primary = join(demoFolder, `Lifeguard-demo-${demoId}-installer.exe`)
+  const duplicate = join(demoFolder, `Lifeguard-demo-${demoId}-installer-copy.exe`)
   await writeFile(primary, data)
   await writeFile(duplicate, data)
+  const oldTime = new Date(Date.now() - 45 * 86_400_000)
+  await utimes(primary, oldTime, oldTime)
+  await utimes(duplicate, oldTime, oldTime)
 
   if (!demoWorker) {
     const workerPath = join(__dirname, 'demo-worker.js')
     demoWorker = fork(workerPath, [], { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, silent: true })
     demoWorkerPid = demoWorker.pid ?? null
   }
-  const current = await observeSystem()
-  saveProfile({
-    duplicateAgeDays: 0,
-    idleMinutes: 0,
-    memoryThresholdMb: Math.ceil(current.availableMemoryMb + 1),
-    demoMode: true
-  })
+  saveProfile({ demoMode: true })
+  await queuePriorityPath(demoFolder)
 }
 
 export function getState(): LifeguardState {
@@ -253,6 +228,7 @@ export function getState(): LifeguardState {
     actions: getActions(),
     quarantine: getQuarantine(),
     snapshot,
+    storage: getStorageIndex(),
     watching: true
   }
 }

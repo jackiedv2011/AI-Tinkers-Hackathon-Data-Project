@@ -1,13 +1,23 @@
 # Lifeguard
 
-Lifeguard is a desktop-only autonomous resource guardian for Windows and macOS. It protects one named project, watches one approved downloads folder for exact duplicates, and pauses only a pre-approved inactive process when the system is under memory pressure.
+Lifeguard is an always-running desktop agent that quietly keeps a Windows or macOS computer healthy. It automatically discovers every fixed drive, incrementally learns the machine's working set, reclaims high-confidence waste through recoverable quarantine, and gracefully closes restartable idle apps only under real memory pressure.
 
-## Safety model
+There is no folder-selection workflow and no recommendation inbox. The environment is the product: Lifeguard uses drive layout, file age and location, foreground-app context, memory pressure, protected projects, and recovery history to decide when silence is safer than action.
 
-- The policy engine is deterministic and local.
-- Files are moved to a recoverable Quarantine folder; Lifeguard never permanently deletes files.
-- Protected folders, foreground apps, backup clients, security software, and unapproved processes are excluded.
-- Every action has a plain-language audit entry and a restore path.
+## What the MVP does
+
+- Discovers all fixed local volumes automatically on Windows and macOS.
+- Persists a budgeted depth-first index queue so scanning continues in small background slices across launches.
+- Detects exact duplicates with size grouping plus SHA-256 verification across scanned user space.
+- Scores importance from recency, personal-folder location, source-code type, protected zones, and known disposable locations.
+- Quarantines only low-importance exact duplicates and old files in known cache/temp locations.
+- Never permanently deletes user data; every moved file has an integrity hash, explanation, original path, and restore action.
+- Watches foreground context and RAM. Under pressure it can gracefully close only a small allowlist of restartable apps after observing them idle for 45 minutes.
+- Hard-protects system directories, app installs, active projects, foreground apps, security software, and cloud-sync clients.
+- Starts with a 24-hour silent learning window. The isolated demo bypasses that window only inside Lifeguard's own demo directory.
+- Runs in the system tray and at login. No iOS or mobile client is claimed.
+
+Cloud-only offload is intentionally not faked: the MVP will not dehydrate a local file until a future provider adapter can prove the remote copy is fully synced.
 
 ## Run locally
 
@@ -16,14 +26,24 @@ pnpm install
 pnpm dev
 ```
 
-Choose a protected project folder and an approved folder to inspect. The **Stage live demo** control creates a real exact duplicate and starts an isolated memory worker; the scheduler then handles both without another click.
+Use **Stage safe live demo** to create two synthetic 4 MB installer files and an isolated memory worker inside Lifeguard's app-data directory. One click stages the conditions; the normal background policy discovers the duplicate, moves one copy into recoverable quarantine, and closes the worker without another prompt.
 
-## Architecture
+## Build
 
-Electron's main process runs the local policy loop. The Windows observer reads the foreground process, process resource usage, and available RAM through PowerShell; the macOS adapter uses native process and memory commands. The shared policy engine decides whether a pre-approved action is safe. React renders the audit trail, quarantine, and context state.
+```bash
+pnpm exec tsc --noEmit
+pnpm build
+pnpm package
+```
 
-Lifeguard intentionally has no iOS or mobile companion. The agent needs the desktop-level file and process context that mobile operating systems do not expose.
+The unpacked Windows application is written to `dist/win-unpacked/Lifeguard.exe`. A macOS package must be produced and verified on macOS because Electron Builder does not cross-sign a Mac application from Windows.
 
-## Hackathon build log
+## Architecture and safety
 
-This repository contains the Lifeguard MVP created for the AI Tinkers Hackathon. The core build is a local Electron + TypeScript application, not an extension of a prior product.
+Electron's main process owns all operating-system access. `observer.ts` reads memory, foreground process, process inventory, and fixed volumes. `storage-indexer.ts` advances a persistent bounded scan. `path-policy.ts` provides deterministic exclusions and importance scoring. `agent.ts` is the sole action authority and writes the recovery ledger. The React renderer receives a narrow IPC bridge and has no direct filesystem access.
+
+The index intentionally skips reparse points, system/install areas, application data outside recognized disposable caches, `.git`, `node_modules`, protected projects, and Lifeguard's own quarantine. Permission errors fail closed and scanning continues.
+
+## Hackathon eligibility
+
+This repository contains the net-new Lifeguard MVP created during the AI Tinkers Hackathon. Libraries and build tooling are reusable components; the storage indexer, policy engine, observers, quarantine ledger, demo harness, and interface are hackathon work.
