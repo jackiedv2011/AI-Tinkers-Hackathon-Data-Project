@@ -1,6 +1,7 @@
 export type ActionType = 'file_quarantine' | 'cache_quarantine' | 'process_paused' | 'restore'
 
 export type Profile = {
+  paused?: boolean
   protectedFolders: string[]
   protectedApps: string[]
   autoPausableApps: string[]
@@ -133,4 +134,5 @@ export type LifeguardState = {
   storage: StorageIndexState
   reasoning: ReasoningPublicState
   watching: boolean
+  acting?: boolean
 }

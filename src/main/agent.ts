@@ -71,6 +71,7 @@ function learningPeriodComplete(): boolean {
 
 async function quarantineCandidate(candidate: CleanupCandidate): Promise<boolean> {
   const profile = getProfile()
+  if (profile.paused) return false
   const isDemo = profile.demoMode && isDemoPath(candidate.path)
   if (!isDemo && !learningPeriodComplete()) return false
   if (profile.protectedFolders.some((folder) => folder && isInside(candidate.path, folder))) return false
@@ -87,6 +88,8 @@ async function quarantineCandidate(candidate: CleanupCandidate): Promise<boolean
   try {
     const hash = await verifyCandidateIdentity(candidate)
     if (!hash) return false
+    if (getProfile().paused) return false
+    if (getProfile().protectedFolders.some((folder) => folder && isInside(candidate.path, folder))) return false
     const quarantinePath = uniqueQuarantinePath(candidate.path)
     await moveSafely(candidate.path, quarantinePath)
     const entry: QuarantineEntry = {
@@ -164,6 +167,7 @@ async function pauseDemoWorker(): Promise<boolean> {
 
 async function runProcessPolicy(current: SystemSnapshot): Promise<boolean> {
   const profile = getProfile()
+  if (profile.paused) return false
   if (current.platform === 'darwin' && !current.foregroundPid && !demoWorkerPid) return false
   const underPressure = current.availableMemoryMb < profile.memoryThresholdMb
   if (!underPressure && !demoWorkerPid) return false
@@ -206,15 +210,17 @@ async function executePolicyCycle(): Promise<SystemSnapshot> {
     }
   }
   if (snapshot.foregroundPid) observedActivity.set(snapshot.foregroundPid, now)
-  await maybeRunReasoning(snapshot)
-  for (const approved of takeReasoningApprovedCandidates()) await quarantineCandidate(approved)
-  await runProcessPolicy(snapshot)
-  await scanStorageTick(getProfile(), async (candidate) => {
-    if (!getProfile().demoMode && queueReasoningCandidate(candidate)) return false
-    return quarantineCandidate(candidate)
-  })
-  await maybeRunReasoning(snapshot)
-  for (const approved of takeReasoningApprovedCandidates()) await quarantineCandidate(approved)
+  if (!getProfile().paused) {
+    await maybeRunReasoning(snapshot)
+    for (const approved of takeReasoningApprovedCandidates()) await quarantineCandidate(approved)
+    await runProcessPolicy(snapshot)
+    await scanStorageTick(getProfile(), async (candidate) => {
+      if (!getProfile().demoMode && queueReasoningCandidate(candidate)) return false
+      return quarantineCandidate(candidate)
+    })
+    await maybeRunReasoning(snapshot)
+    for (const approved of takeReasoningApprovedCandidates()) await quarantineCandidate(approved)
+  }
   return snapshot
 }
 
@@ -228,6 +234,11 @@ export function refreshAndRunPolicy(): Promise<SystemSnapshot> {
 
 export async function startFreshStorageScan(): Promise<void> {
   await restartStorageCycle()
+}
+
+export async function setWatching(watching: boolean): Promise<LifeguardState> {
+  saveProfile({ paused: !watching })
+  return getState()
 }
 
 export async function stageLiveDemo(): Promise<void> {
@@ -263,8 +274,9 @@ export function getState(): LifeguardState {
     actions: getActions(),
     quarantine: getQuarantine(),
     snapshot,
-    storage: getStorageIndex(),
+    storage: getProfile().paused ? { ...getStorageIndex(), status: 'paused' } : getStorageIndex(),
     reasoning: getReasoningPublicState(),
-    watching: true
+    watching: !getProfile().paused,
+    acting: !getProfile().paused && refreshInFlight !== null
   }
 }

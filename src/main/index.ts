@@ -1,13 +1,17 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell, Tray } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell, Tray } from 'electron'
 import { join } from 'node:path'
-import { getState, refreshAndRunPolicy, restoreQuarantine, stageLiveDemo, startFreshStorageScan } from './agent'
+import { getState, refreshAndRunPolicy, restoreQuarantine, stageLiveDemo, startFreshStorageScan, setWatching } from './agent'
 import { isDemoPath } from './demo-paths'
 import { saveProfile } from './store'
+import { installTray } from './tray'
+import { getAppIcon } from './app-icons'
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let isQuitting = false
 let suppressInitialWindow = false
+let pendingPage = 'Home'
+let uiReady = false
 const isSelfTest = process.argv.includes('--lifeguard-self-test')
 const isVideoDemo = process.argv.includes('--lifeguard-video-demo')
 const hasSingleInstanceLock = app.requestSingleInstanceLock()
@@ -15,6 +19,7 @@ const hasSingleInstanceLock = app.requestSingleInstanceLock()
 if (isVideoDemo) app.disableHardwareAcceleration()
 
 function createWindow(): void {
+  uiReady = false
   mainWindow = new BrowserWindow({
     width: 1180,
     height: 800,
@@ -22,7 +27,9 @@ function createWindow(): void {
     minHeight: 680,
     show: false,
     autoHideMenuBar: true,
-    title: 'Lifeguard',
+    title: 'Headroom',
+    icon: join(__dirname, '../renderer/art/headroom-icon.png'),
+    backgroundColor: '#f7f5f3',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true,
@@ -62,27 +69,20 @@ function createWindow(): void {
   else mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
 }
 
+function navigate(page: string): void {
+  pendingPage = page
+  if (!mainWindow || mainWindow.isDestroyed()) createWindow()
+  if (mainWindow?.isMinimized()) mainWindow.restore()
+  mainWindow?.show()
+  mainWindow?.focus()
+  if (uiReady) mainWindow?.webContents.send('ui:navigate', page)
+}
+
 function createTray(): void {
-  const icon = nativeImage.createFromDataURL(
-    `data:image/svg+xml;base64,${Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" rx="16" fill="#142117"/><path d="M32 8l17 7v13c0 12-7 22-17 28C22 50 15 40 15 28V15l17-7z" fill="#b9ff76"/><path d="M23 32l6 6 13-14" fill="none" stroke="#142117" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>').toString('base64')}`
-  )
-  tray = new Tray(icon)
-  tray.setToolTip('Lifeguard is protecting your work')
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: 'Open Lifeguard', click: () => mainWindow?.show() },
-      { label: 'Run a protection check', click: () => void refreshAndRunPolicy() },
-      { type: 'separator' },
-      {
-        label: 'Quit Lifeguard',
-        click: () => {
-          isQuitting = true
-          app.quit()
-        }
-      }
-    ])
-  )
-  tray.on('click', () => mainWindow?.show())
+  tray = installTray(navigate, async () => {
+    const folder = await chooseFolder()
+    if (folder) saveProfile({ protectedFolders: [folder] })
+  }, () => { isQuitting = true; app.quit() })
 }
 
 async function chooseFolder(): Promise<string | null> {
@@ -91,9 +91,26 @@ async function chooseFolder(): Promise<string | null> {
 }
 
 function registerIpc(): void {
+  ipcMain.handle('app:icon', (_, pid) => getAppIcon(pid))
+  const loginOptions = { path: process.execPath, args: app.isPackaged ? [] : [app.getAppPath()] }
+  ipcMain.on('ui:ready', () => { uiReady = true; mainWindow?.webContents.send('ui:navigate', pendingPage) })
+  ipcMain.handle('agent:set-watching', async (_, watching) => {
+    if (typeof watching !== 'boolean') throw new Error('Invalid monitoring state.')
+    return setWatching(watching)
+  })
+  ipcMain.handle('settings:get', () => ({ openAtLogin: app.getLoginItemSettings(loginOptions).openAtLogin }))
+  ipcMain.handle('settings:update', (_, settings) => {
+    if (typeof settings?.openAtLogin !== 'boolean') throw new Error('Invalid startup preference.')
+    app.setLoginItemSettings({ ...loginOptions, openAtLogin: settings.openAtLogin })
+    return { openAtLogin: app.getLoginItemSettings(loginOptions).openAtLogin }
+  })
   ipcMain.handle('state:get', () => getState())
   ipcMain.handle('state:refresh', async () => {
     await refreshAndRunPolicy()
+    return getState()
+  })
+  ipcMain.handle('profile:update', (_, partial) => {
+    saveProfile(partial)
     return getState()
   })
   ipcMain.handle('folder:choose-protected', async () => {
@@ -107,8 +124,7 @@ function registerIpc(): void {
     return getState()
   })
   ipcMain.handle('quarantine:restore', async (_, id: string) => {
-    if (typeof id !== 'string' || id.length > 100) return getState()
-    await restoreQuarantine(id)
+    if (typeof id !== 'string' || id.length > 100 || !await restoreQuarantine(id)) throw new Error('This file could not be restored. It may already be restored or its held copy is unavailable.')
     return getState()
   })
   ipcMain.handle('demo:stage', async () => {
@@ -179,6 +195,7 @@ if (!hasSingleInstanceLock) {
 
 app.on('before-quit', () => {
   isQuitting = true
+  tray?.destroy()
 })
 
 app.on('window-all-closed', () => {

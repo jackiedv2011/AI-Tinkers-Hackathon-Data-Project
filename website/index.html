@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Headroom — Room for what matters</title>
+<meta name="description" content="Headroom is an ambient desktop agent that protects active work and safely reclaims system resources around it.">
+<meta property="og:title" content="Headroom — Room for what matters">
+<meta property="og:description" content="Your computer should understand what you’re working on and make room for it.">
+<link rel="icon" href="assets/headroom/mark.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link id="font-css" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300..600&display=swap">
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="headroom.css">
+<link rel="stylesheet" href="brand.css">
+<link rel="stylesheet" href="ecosystem.css">
+</head>
+<body data-landing>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6.5 9.5 5.5 5.5 5.5-5.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="wordmark" viewBox="0 0 89 15"><text x="44.5" y="14.62" text-anchor="middle" textLength="88.6" lengthAdjust="spacingAndGlyphs" class="wm-text">Headroom.</text></symbol>
+</svg>
+
+<header class="hdr">
+  <div class="hdr-fade" aria-hidden="true"></div>
+  <div class="hdr-left">
+    <a class="logo" href="#top" aria-label="Headroom home"><span class="hr-mark" aria-hidden="true"></span></a>
+    <button class="menu-btn" type="button" aria-expanded="false" aria-controls="main-nav">Menu<svg><use href="#i-chev"/></svg></button>
+    <nav class="hdr-links" id="main-nav" aria-label="Main navigation">
+      <a href="#product">Product</a><a href="#how-it-works">How it works</a><a href="#safety">Safety</a><a href="#download">Download</a>
+    </nav>
+  </div>
+  <div class="hdr-center"><a class="context-link" href="#product"><span class="status-dot"></span> Your work comes first.</a></div>
+  <div class="hdr-right">
+    <div class="auth">
+      <a class="btn btn-ghost" href="#how-it-works">See it work</a>
+      <a class="btn btn-dark" href="#download">Get Headroom</a>
+    </div>
+  </div>
+</header>
+
+<main id="top">
+  <div class="intro">
+    <section class="hero">
+      <div class="hero-sphere" aria-hidden="true">
+        <div class="hero-sphere-in">
+          <div class="hero-sphere-fade"></div>
+          <div class="sphere-box"><canvas id="sphere-hero"></canvas></div>
+        </div>
+      </div>
+      <div class="hero-content" data-hero>
+        <div class="hero-stack" data-hero-stack>
+          <span class="hero-brand">Headroom.</span>
+          <h1>Room for<br>what matters.</h1>
+          <p class="hero-description">Your work, protected.<br>Your computer, making room.</p><div class="hero-cta">
+            <a class="btn btn-dark btn-md" href="#download">Get Headroom</a>
+            <a class="btn btn-line btn-md" href="#how-it-works">See it work</a>
+          </div>
+        </div>
+      </div>
+      <div class="hero-white" aria-hidden="true"></div>
+    </section>
+
+  </div>
+
+  <section class="purpose" aria-labelledby="purpose-title">
+    <p class="eyebrow">A little less managing. A little more making.</p>
+    <h2 id="purpose-title" data-words>The machine should<br>adapt to you.</h2>
+    <p class="purpose-body">Name the work that matters. Headroom protects it and quietly makes room around it.</p>
+    <a class="text-link" href="#product">See how protection works <span>↗</span></a>
+  </section>
+
+  <section class="protect-section section" id="product">
+    <div class="section-heading"><p class="eyebrow">01 / Protect</p><h2 class="h-66" data-words>Your work stays untouched.</h2><p>Your project is the constant.<br>Everything around it can make room.</p></div>
+    <div class="protect-stage" data-rise role="img" aria-label="A protected project remains in the center while background files move around it.">
+      <div class="orbit-line one"></div><div class="orbit-line two"></div>
+      <div class="artifact art-one"><img src="assets/img/home-2.jpg" alt=""><span>interior-study.jpg</span></div>
+      <div class="artifact art-two"><img src="assets/headroom/code.svg" alt=""><span>src /</span></div>
+      <div class="artifact art-three"><img src="assets/img/cyan-2.jpg" alt=""><span>botanical-print.jpg</span></div>
+      <div class="artifact art-four"><img src="assets/img/home-2.jpg" alt=""><span>interior-study (1).jpg</span></div>
+      <div class="project-anchor"><span class="folder-shape"></span><span class="project-name">Your next big thing.</span><span class="protected-tag"><i></i> Protected workspace</span></div>
+      <span class="scene-note">Illustrative workspace</span>
+    </div>
+    <p class="section-foot">Your project folders and foreground app stay protected.</p>
+  </section>
+
+  <section class="section reclaim-section" id="how-it-works">
+    <div class="section-heading"><p class="eyebrow">02 / Make room</p><h2 class="h-66" data-words>Less in the way.<br>More room to work.</h2><p>Only what’s safe. Only where you’ve allowed it.</p></div>
+    <div class="reclaim-layout" data-rise>
+      <div class="duplicate-scene" data-reclaim-scene>
+        <div class="file-sheet original"><span class="file-type">PROJECT FILE</span><div class="file-art"></div><strong>Final export</strong><span class="file-status">Original · protected</span></div>
+        <div class="file-sheet copy"><span class="file-type">EXACT COPY</span><div class="file-art"></div><strong>Final export (1)</strong><span class="file-status">Same contents</span></div>
+        <div class="quarantine-tray"><span>Quarantine</span><span>Kept within reach ↗</span></div>
+        <span class="scene-note">Interactive example · no files are changed</span>
+      </div>
+      <div class="reclaim-copy"><span class="eyebrow">A second copy. A safe place.</span><h3>Keep the original.<br>Hold the extra.</h3><p>Headroom checks for exact duplicates in approved folders. The extra copy goes to quarantine, with a receipt and a way back.</p><button class="btn btn-dark" data-reclaim>Try the safe move ↗</button><p class="demo-feedback" data-reclaim-status aria-live="polite">The original stays right where it belongs.</p></div>
+    </div>
+    <div class="pressure-story" data-rise><div class="pressure-visual" aria-hidden="true"><span class="pressure-block primary">Your work</span><span class="pressure-block idle">Idle app</span><span class="pressure-room">Room to run ↗</span></div><div><h3>Room when it matters.</h3><p>Under memory pressure, Headroom can gracefully close pre-approved idle background apps. Your foreground app stays open.</p><span class="small-note">Reopening an app does not restore its previous session.</span></div></div>
+  </section>
+
+  <section class="section receipts-section" id="transparency">
+    <div class="receipt-intro"><p class="eyebrow">03 / Explain</p><h2 class="h-66" data-words>No mystery.<br>Just a receipt.</h2><p>What changed, why it was safe,<br>and how to bring it back.</p></div>
+    <article class="receipt" data-rise><div class="receipt-top"><span class="hr-mark" aria-hidden="true"></span><span>Headroom. / Activity</span></div><span class="eyebrow">Illustrative receipt</span><h3>One less copy.<br>Nothing lost.</h3><dl><div><dt>Action</dt><dd>Duplicate quarantined</dd></div><div><dt>File</dt><dd>Final export (1).png</dd></div><div><dt>Reason</dt><dd>Exact match to the protected original</dd></div><div><dt>Scope</dt><dd>Approved exports folder</dd></div><div><dt>Recovery</dt><dd>Return to original location</dd></div></dl><button class="receipt-restore" data-receipt-restore>Restore example file <span>↗</span></button><p class="small-note" data-receipt-status aria-live="polite">Held safely. Never permanently deleted.</p></article>
+  </section>
+
+  <section class="section safety-section" id="safety"><p class="eyebrow">04 / Stay in control</p><h2 class="h-66" data-words>Built for the work<br>you can’t afford to lose.</h2><div class="safety-rules"><article><span>01</span><h3>Protected means protected.</h3><p>Named project folders and the foreground app are excluded from resource actions.</p></article><article><span>02</span><h3>A place to go back.</h3><p>Quarantine holds exact duplicates. The original stays in place, and a restore path stays available.</p></article><article><span>03</span><h3>Your scope. Clear rules.</h3><p>Deterministic policy authorizes actions inside approved scope. AI can explain, but never override it.</p></article></div></section>
+
+  <section class="section room-editorial" id="devices" aria-labelledby="devices-title">
+  <figure class="room-art"><img src="assets/headroom/room-sculpture.jpg" alt="A cobalt-blue metal arch shelters a small red glass sphere in warm sunlight." width="2048" height="2048" loading="lazy"></figure>
+  <div class="room-editorial-copy"><p class="eyebrow">A little room goes a long way.</p><h2 id="devices-title">Space to work.<br>Room to breathe.</h2><p class="room-body">Headroom takes care of the space around your work. So you can stay with the thing that matters.</p><a class="room-link" href="#download">Make yourself some room <span aria-hidden="true">↗</span></a><div class="room-platforms"><p><strong>At your desk</strong><span>Windows MVP · macOS planned</span></p><p><strong>Within reach</strong><span>iPhone companion · planned</span></p></div></div>
+</section>
+
+  <div class="dream-wrap">
+    <div class="dream-top" aria-hidden="true">
+      <div class="sphere-box dream-box"><canvas id="sphere-dream"></canvas></div>
+    </div>
+    <div class="dream-blur" aria-hidden="true"></div>
+    <div class="dream-in">
+      <section class="s-dream" id="download">
+        <p class="dream-t" data-words>Make room.</p>
+        <div class="dream-cta">
+          <button class="btn-huge" type="button" data-download>Get Headroom</button>
+          <button class="btn btn-line btn-lg" type="button" data-download>Download the app</button>
+        </div>
+      </section>
+      <footer class="ftr">
+        <div class="ftr-row">
+          <div class="ftr-links"><a href="#product">Product</a><a href="#how-it-works">How it works</a><a href="#safety">Safety</a><a href="#download">Download</a></div>
+          <a class="ftr-logo" href="#top" aria-label="Headroom"><span class="hr-mark large" aria-hidden="true"></span></a>
+          <div class="ftr-links"><a href="#transparency">Activity</a><button type="button" data-safety>Our safety rules</button></div>
+        </div>
+        <div class="ftr-mark"><svg class="wordmark wm-foot" aria-label="Headroom"><use href="#wordmark"/></svg></div>
+      </footer>
+    </div>
+  </div>
+</main>
+
+<dialog class="info-dialog" aria-labelledby="info-title">
+  <button type="button" class="dialog-close" aria-label="Close">×</button>
+  <p class="purpose-kicker">Headroom.</p>
+  <h2 id="info-title"></h2>
+  <div data-info-body></div>
+  <button class="btn btn-dark" type="button" data-info-close>Got it</button>
+</dialog>
+
+<script src="js/sphere.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
