@@ -215,7 +215,6 @@ async function executePolicyCycle(): Promise<SystemSnapshot> {
   })
   await maybeRunReasoning(snapshot)
   for (const approved of takeReasoningApprovedCandidates()) await quarantineCandidate(approved)
-  if (getProfile().demoMode) saveProfile({ demoMode: false })
   return snapshot
 }
 

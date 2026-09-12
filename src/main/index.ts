@@ -134,8 +134,15 @@ async function startApplication(): Promise<void> {
   if (isSelfTest) {
     const testStartedAt = Date.now()
     await stageLiveDemo()
-    await new Promise((resolve) => setTimeout(resolve, 750))
-    await refreshAndRunPolicy()
+    const deadline = Date.now() + 12_000
+    while (Date.now() < deadline) {
+      await refreshAndRunPolicy()
+      const rules = new Set(getState().actions
+        .filter((entry) => new Date(entry.timestamp).getTime() >= testStartedAt)
+        .map((entry) => entry.rule))
+      if (rules.has('whole-drive-exact-duplicate') && rules.has('known-disposable-path') && rules.has('context-aware-memory-pressure')) break
+      await new Promise((resolve) => setTimeout(resolve, 250))
+    }
     const newRecoverableItem = getState().quarantine.find((entry) => !entry.restoredAt && isDemoPath(entry.originalPath) && new Date(entry.quarantinedAt).getTime() >= testStartedAt)
     if (newRecoverableItem) await restoreQuarantine(newRecoverableItem.id)
     isQuitting = true
